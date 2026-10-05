@@ -173,7 +173,12 @@ impl<D: Device> St25r391x<D> {
                 self.changed = true;
             }
             match self.device.transfer(prefix, Some(out)) {
-                Ok(2) => return self.check(deadline),
+                Ok(2) => {
+                    return self.check(deadline).map_err(|mut expired| {
+                        expired.deadline_source = last_error;
+                        expired
+                    })
+                }
                 Ok(completed) => {
                     return Err(self.error(ErrorKind::ShortTransfer {
                         expected: 2,

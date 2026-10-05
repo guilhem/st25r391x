@@ -330,3 +330,51 @@ fn regression_retry_deadline_preserves_last_linux_error() {
         }
     }
 }
+
+struct EventuallySuccessfulRegister {
+    calls: usize,
+}
+impl Device for EventuallySuccessfulRegister {
+    fn transfer(
+        &mut self,
+        p: &[u8],
+        r: Option<&mut [u8]>,
+    ) -> std::result::Result<u32, LinuxI2CError> {
+        assert_eq!(p, [0x7f]);
+        let out = r.expect("only ordinary register reads are allowed");
+        self.calls += 1;
+        match self.calls {
+            1 => Err(LinuxI2CError::Errno(11)),
+            2 => {
+                thread::sleep(Duration::from_millis(120));
+                out.copy_from_slice(&[0x5a]);
+                Ok(2)
+            }
+            _ => panic!("a successful read must not be retried"),
+        }
+    }
+}
+#[test]
+fn regression_late_successful_retry_keeps_deadline_and_last_errno() {
+    let mut r = St25r391x::new(EventuallySuccessfulRegister { calls: 0 });
+    r.settings.poll_interval = Duration::from_millis(1);
+    let mut out = [0];
+    let error = r
+        .read(
+            &[0x7f],
+            &mut out,
+            true,
+            Instant::now() + Duration::from_millis(100),
+        )
+        .unwrap_err();
+    assert_eq!(out, [0x5a]);
+    assert_eq!(r.device.calls, 2);
+    assert!(!r.changed);
+    assert!(matches!(error.kind, ErrorKind::Deadline));
+    assert_eq!(error.raw_os_error(), Some(11));
+    assert!(matches!(
+        error.deadline_source,
+        Some(LinuxI2CError::Errno(11))
+    ));
+    assert!(std::error::Error::source(&error).is_some());
+}
