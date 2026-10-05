@@ -417,6 +417,7 @@ fn nfc_b_pupi_attrib_and_invalid_response() {
 #[test]
 fn st25tb_initiate_select_uid() {
     let mut s = Script::default();
+    tb_inventory_reset_script(&mut s);
     frame_script(&mut s, &[6, 0], 16, &[0xa5, 0, 0], true, false, None);
     frame_script(&mut s, &[0x0e, 0xa5], 16, &[0xa5, 0, 0], true, false, None);
     frame_script(
@@ -610,6 +611,7 @@ fn b_crc_and_invalid_attrib_are_rejected() {
 #[test]
 fn tb_wrong_uid_is_a_selection_failure() {
     let mut s = Script::default();
+    tb_inventory_reset_script(&mut s);
     frame_script(&mut s, &[6, 0], 16, &[7, 0, 0], true, false, None);
     frame_script(&mut s, &[0x0e, 7], 16, &[7, 0, 0], true, false, None);
     frame_script(&mut s, &[0x0b], 8, &[0; 10], true, false, None);
@@ -730,4 +732,21 @@ fn receive_only_uses_unmask_and_nrt() {
         .unwrap();
     assert_eq!(f.bytes, 3);
     finish(&mut r);
+}
+
+mod regressions;
+
+fn tb_inventory_reset_script(s: &mut Script) {
+    let start = s.steps.len();
+    frame_script(s, &[0x0c], 8, &[], true, false, None);
+    let tx = s
+        .steps
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find(|(_, step)| step.prefix == [0xc4])
+        .unwrap()
+        .0;
+    s.steps.truncate(tx + 3);
+    s.write(&[0xc2]);
 }

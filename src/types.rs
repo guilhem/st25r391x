@@ -95,14 +95,22 @@ pub struct Error {
     pub transmission: Transmission,
     pub field: FieldState,
     pub cleanup: Option<Box<Error>>,
+    /// Last temporarily unavailable ordinary read when its retry deadline expires.
+    /// Preserved as Error::source and raw_os_error while kind remains Deadline.
+    pub deadline_source: Option<LinuxI2CError>,
 }
 
 impl Error {
     pub fn raw_os_error(&self) -> Option<i32> {
-        match &self.kind {
-            ErrorKind::Transport(LinuxI2CError::Errno(n)) => Some(*n),
-            ErrorKind::Transport(LinuxI2CError::Io(e)) => e.raw_os_error(),
+        let source = match &self.kind {
+            ErrorKind::Transport(e) => Some(e),
+            ErrorKind::Deadline => self.deadline_source.as_ref(),
             _ => None,
+        };
+        match source {
+            Some(LinuxI2CError::Errno(n)) => Some(*n),
+            Some(LinuxI2CError::Io(e)) => e.raw_os_error(),
+            None => None,
         }
     }
 }
@@ -113,6 +121,9 @@ impl fmt::Display for Error {
             "{:?}: {:?} (TX {:?}, field {:?}, possible changes {})",
             self.stage, self.kind, self.transmission, self.field, self.possible_changes
         )?;
+        if let Some(e) = &self.deadline_source {
+            write!(f, "; last read error: {e}")?;
+        }
         if let Some(e) = &self.cleanup {
             write!(f, "; cleanup: {e}")?;
         }
@@ -123,6 +134,7 @@ impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match &self.kind {
             ErrorKind::Transport(e) => Some(e),
+            ErrorKind::Deadline => self.deadline_source.as_ref().map(|e| e as _),
             _ => None,
         }
     }

@@ -25,9 +25,11 @@ shutdown. AAT values are manual controls, not an automatic antenna optimizer.
 Capabilities:
 
 - NFC-A: REQA/WUPA, bounded bit anticollision, 4/7/10 byte UID cascades,
-  BCC, SELECT/SAK consistency, RATS/ATS for ISO-DEP-capable tags.
+  BCC, SELECT/SAK consistency (88h is UID data at CL3), RATS/ATS including
+  the valid TL-only ATS for ISO-DEP-capable tags.
 - NFC-B: one-slot REQB/WUPB, PUPI, ATQB and ATTRIB at 106 kbit/s,
-  FSDI 8 and CID 0. ST25TB: INITIATE, chip-ID SELECT and GET_UID.
+  FSDI 8 and CID 0. ST25TB: RESET_TO_INVENTORY before INITIATE, chip-ID
+  SELECT and GET_UID, allowing discovery/selection after an earlier activation.
 - `discover` activates one tag; `select` verifies an expected UID/PUPI. Fields
   stay on after successful discovery/selection. A collisions choose zero unless
   selecting a known UID; B/TB collisions are reported, not enumerated.
@@ -53,14 +55,20 @@ Register/FIFO reads are one combined write + repeated START + read ioctl, final
 STOP. Bank B prefix FB shares the same write transaction. IRQ reads clear flags;
 FIFO reads consume bytes. Neither is retried, including EAGAIN. Only ordinary
 repeatable register reads retry EAGAIN; writes/commands/exchanges never replay.
-Short message counts are errors. Errors preserve Linux errno, stage, possible
+If an ordinary-read retry reaches its deadline, ErrorKind::Deadline retains
+its last Linux error in deadline_source and Error::source(), preserving errno
+and error variant. Short message counts are errors.
+Errors preserve Linux errno, stage, possible
 changes, TX progress, field certainty and any cleanup error. Failed RF operations
 poison the reader; only successful initialize clears poison. Explicit shutdown
 waits required RF holds, STOPs activity, disables oscillator/transmitter and
 verifies status; Drop is only best effort and can block.
 
 Raw ST25TB opcode 09 is protected before and after the transmit ioctl, even if
-it fails ambiguously or the deadline expires. TX-only waits for EOF and the hold
+it fails ambiguously or the deadline expires. Ambiguous NFC-B/ST25TB TX protection
+covers ten-bit characters including CRC, SOF/EOF and maximum supported interchar
+guards at fc/128, then adds the field hold; the bound is rearmed after ioctl returns.
+TX-only waits for EOF and the hold
 before stopping reception. Default general frame hold is 10 ms; callers must set
 larger maximum programming times for other families. No software can guarantee
 power through process kill, unplugging, another owner, or adapter failure.

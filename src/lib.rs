@@ -98,6 +98,7 @@ impl<D: Device> St25r391x<D> {
             transmission: self.transmission,
             field: self.field,
             cleanup: None,
+            deadline_source: None,
         }
     }
     fn start(&mut self, timeout: Duration) -> Result<Instant> {
@@ -162,8 +163,12 @@ impl<D: Device> St25r391x<D> {
         repeatable: bool,
         deadline: Instant,
     ) -> Result<()> {
+        let mut last_error = None;
         loop {
-            self.check(deadline)?;
+            if let Err(mut expired) = self.check(deadline) {
+                expired.deadline_source = last_error;
+                return Err(expired);
+            }
             if !repeatable {
                 self.changed = true;
             }
@@ -175,7 +180,13 @@ impl<D: Device> St25r391x<D> {
                         completed,
                     }))
                 }
-                Err(e) if repeatable && temporarily_unavailable(&e) => self.pause(deadline)?,
+                Err(e) if repeatable && temporarily_unavailable(&e) => {
+                    if let Err(mut expired) = self.pause(deadline) {
+                        expired.deadline_source = Some(e);
+                        return Err(expired);
+                    }
+                    last_error = Some(e);
+                }
                 Err(e) => return Err(self.error(ErrorKind::Transport(e))),
             }
         }
@@ -529,6 +540,22 @@ impl<D: Device> St25r391x<D> {
         self.set_reg(0x12, step, deadline)?;
         self.write(&[0x10, (ticks >> 8) as u8, ticks as u8], deadline)
     }
+    fn transmit_airtime(&self, bits: usize, options: &FrameOptions) -> Duration {
+        let crc_bytes = if options.tx_crc { 2 } else { 0 };
+        let characters = bits.div_ceil(8) + crc_bytes;
+        let etu = if matches!(self.technology, Some(Technology::NfcB | Technology::St25tb)) {
+            // DS11456 §3.1: start + eight data + stop = ten ETU per byte,
+            // including CRC. DS12484 §4.5.7: max SOF 14, EOF 11, EGT 6 ETU.
+            // Bound all supported settings, although field_on programs EGT=0.
+            characters * 10 + characters.saturating_sub(1) * 6 + 14 + 11
+        } else {
+            // NFC-A parity applies to every complete byte, including CRC.
+            // Reserve 64 ETU for framing/short commands and partial bytes.
+            bits + crc_bytes * 8 + if options.tx_parity { characters } else { 0 } + 64
+        };
+        // The configured 106 kbit/s rate is exactly fc/128 (not 106000 Hz).
+        Duration::from_nanos((etu as u64 * 128 * 1_000_000_000).div_ceil(13_560_000))
+    }
     #[allow(clippy::too_many_arguments)] // Wire payload, framing mode and shared deadline.
     fn frame(
         &mut self,
@@ -577,8 +604,7 @@ impl<D: Device> St25r391x<D> {
             } else {
                 options.field_hold
             };
-            let air_bits = bits + bits.div_ceil(8) + if options.tx_crc { 16 } else { 0 } + 64;
-            let air = Duration::from_micros((air_bits as u64 * 1_000_000).div_ceil(106_000));
+            let air = self.transmit_airtime(bits, &options);
             self.hold_until = Instant::now() + air + hold;
             self.transmission = Transmission::PossiblyStarted;
             let sent = self.command(

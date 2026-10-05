@@ -36,7 +36,9 @@ Specification references consulted on 2026-10-05:
   71–86, 90–92, 98–105, 108–121, 125, 135 (printed numbering).
 - ST [ST25TB512-AT](https://www.st.com/resource/en/datasheet/st25tb512-at.pdf),
   **DS11456 Rev 9, April 2026**: §4 EEPROM/counters/OTP restrictions,
-  §8.1/.4/.7/.8/.9 INITIATE, SELECT, READ_BLOCK, WRITE_BLOCK, GET_UID;
+  §3.1: ten-bit request characters and SOF/EOF; §6.4/.3 and §8.6:
+  Selected-to-Inventory reset before renewed INITIATE; §8.1/.4/.7/.8/.9:
+  INITIATE, SELECT, READ_BLOCK, WRITE_BLOCK, GET_UID;
   §10/table 13 programming timings. UID and 32-bit block data transmitted least
   significant byte first; CRC low byte first. Programming hold is conservative
   10 ms (covers the 7 ms maximum counter programming interval).
@@ -45,6 +47,20 @@ Specification references consulted on 2026-10-05:
 - NXP [AN10833](https://www.nxp.com/docs/en/application-note/AN10833.pdf),
   **Rev 3.9, 15 December 2025**, ATQA/SAK interpretation; product hints
   are not authentication or identification guarantees.
+
+- NXP [AN10927](https://www.nxp.com/docs/en/application-note/AN10927.pdf),
+  **Rev 4.1, 5 July 2018**, §2/figure 1 and cascade level 3 description:
+  CL3 contains UID6..UID9 and BCC, without a cascade tag.
+- [ISO/IEC 14443-4:2018(E) preview](https://cdn.standards.iteh.ai/samples/73599/78cb3949540b4b7da711f301650caa06/ISO-IEC-14443-4-2018.pdf),
+  §5.3.1–.3, printed page 8: TL includes itself and excludes CRC; T0 is
+  optional when TL=1. Only the public preview was consulted.
+
+The transmit guard uses DS12484 §4.5.7/table 29 maximum SOF (14 ETU), EOF
+(11 ETU) and interchar EGT (6 ETU), plus ten ETU per NFC-B/ST25TB byte including
+CRC. It uses the configured fc/128 rate, rounds upward and adds the requested
+field hold. These maxima conservatively cover the programmed EGT=0 settings.
+The guard starts before the transmit ioctl and is rearmed after its return,
+including ambiguous failures and deadline overruns.
 
 NFC-B commands use the ISO/IEC 14443-3 Type B framing described by the chip
 and the standard REQB/ATQB/ATTRIB wire protocol. No paywalled ISO edition

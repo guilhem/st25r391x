@@ -172,7 +172,9 @@ impl<D: Device> St25r391x<D> {
             }
             sak = rx[0];
             let cascade = sak & 4 != 0;
-            if cascade != (block[0] == 0x88) || cascade && level == 2 {
+            // AN10927 fig 1: CL3 starts with UID6, even if it equals 88h.
+            let cascade_tag = level < 2 && block[0] == 0x88;
+            if cascade != cascade_tag {
                 return Err(self.error(ErrorKind::InvalidResponse("UID cascade marker/SAK")));
             }
             uid.extend_from_slice(if cascade { &block[1..4] } else { &block[..4] });
@@ -183,7 +185,7 @@ impl<D: Device> St25r391x<D> {
         let mut ats = Vec::new();
         if sak & 0x20 != 0 {
             let r = self.protocol_frame(&[0xe0, 0x80], &mut rx, deadline)?;
-            if r.bytes < 4 || usize::from(rx[0]) + 2 != r.bytes {
+            if r.bytes < 3 || usize::from(rx[0]) + 2 != r.bytes {
                 return Err(self.error(ErrorKind::InvalidResponse("ATS TL")));
             }
             ats.extend_from_slice(&rx[..r.bytes - 2]);
@@ -234,6 +236,21 @@ impl<D: Device> St25r391x<D> {
         })))
     }
     fn select_tb(&mut self, deadline: Instant) -> Result<Option<Tag>> {
+        // DS11456 §6.4/§8.6: Selected tags ignore INITIATE. Reset them to
+        // Inventory on BOTH discovery and selection entry, without a cache.
+        // frame honors any prior programming hold before issuing this command.
+        self.frame(
+            &[0x0c],
+            8,
+            &mut [],
+            FrameOptions {
+                tx_only: true,
+                ..FrameOptions::default()
+            },
+            None,
+            false,
+            deadline,
+        )?;
         let mut rx = [0; FIFO_CAPACITY];
         let r = self.protocol_frame(&[0x06, 0], &mut rx, deadline)?;
         if r.outcome == Outcome::NoResponse {
