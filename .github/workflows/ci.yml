@@ -1,0 +1,20 @@
+name: Rust
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: arm-unknown-linux-gnueabihf,aarch64-unknown-linux-gnu
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked --all-targets
+      - run: cargo build --locked --examples
+      - run: cargo package --locked
+      - run: cargo check --locked --all-targets --target arm-unknown-linux-gnueabihf
+        env:
+          RUSTFLAGS: "-C target-cpu=arm1176jzf-s"
+      - run: cargo check --locked --all-targets --target aarch64-unknown-linux-gnu

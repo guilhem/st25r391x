@@ -1,0 +1,11 @@
+[package]
+name = "st25r391x"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Synchronous I2C userspace ST25R3916/7 reader with NFC-A, NFC-B and ST25TB"
+readme = "README.md"
+include = ["src/**", "examples/**", "Cargo.toml", "Cargo.lock", "LICENSE", "README.md", "PROVENANCE.md"]
+
+[dependencies]
+i2cdev = "=0.6.2"
