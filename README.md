@@ -14,6 +14,11 @@ reader.shutdown(Duration::from_millis(100))?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
+`probe(timeout)` reads and validates the identity before initialization. It does
+not reset, configure or shut down the chip, and does not poison the reader on
+failure. Dropping a fresh probe candidate also performs no bus I/O. This allows
+the caller to distinguish a reader at a shared address before choosing its driver.
+
 Check actual board VDD before initialization: defaults select 3.3 V supply.
 Settings expose supply, RF drive/modulation, per-technology receivers and
 correlators, optional 3916 AAT DAC values, polling and programming hold.

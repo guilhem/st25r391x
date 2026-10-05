@@ -90,6 +90,27 @@ impl<D: Device> St25r391x<D> {
     pub fn is_poisoned(&self) -> bool {
         self.poisoned
     }
+    /// Identify the chip without reset, configuration, RF changes or cleanup.
+    /// A fresh reader can be discarded after this probe without Drop bus I/O.
+    pub fn probe(&mut self, timeout: Duration) -> Result<Identity> {
+        self.stage = Stage::Identity;
+        self.changed = false;
+        self.transmission = Transmission::NotStarted;
+        let deadline = self.deadline(timeout)?;
+        self.identity(deadline)
+    }
+
+    fn identity(&mut self, deadline: Instant) -> Result<Identity> {
+        let raw = self.reg(0x3f, deadline)?;
+        let identity = Identity {
+            type_code: raw >> 3,
+            revision: raw & 7,
+        };
+        if identity.type_code != 5 {
+            return Err(self.error(ErrorKind::UnexpectedIdentity(raw)));
+        }
+        Ok(identity)
+    }
     fn error(&self, kind: ErrorKind) -> Error {
         Error {
             kind,
@@ -296,14 +317,7 @@ impl<D: Device> St25r391x<D> {
         self.technology = None;
         self.irqs = [0; 4];
         self.stage = Stage::Identity;
-        let raw = self.reg(0x3f, deadline)?;
-        let identity = Identity {
-            type_code: raw >> 3,
-            revision: raw & 7,
-        };
-        if identity.type_code != 5 {
-            return Err(self.error(ErrorKind::UnexpectedIdentity(raw)));
-        }
+        let identity = self.identity(deadline)?;
         self.stage = Stage::Configure;
         // MCU clock disabled, low-frequency output disabled; supply set by caller.
         self.set_reg(0x00, 0x07, deadline)?;

@@ -77,6 +77,59 @@ fn off(s: &mut Script) {
     s.read(&[0x71], &[0]);
 }
 #[test]
+fn probe_only_reads_identity_even_when_rejected_or_dropped() {
+    for raw in [0x28, 0x29, 0x2f, 0x00] {
+        let mut s = Script::default();
+        s.read(&[0x7f], &[raw]);
+        let mut r = St25r391x::new(s);
+        let result = r.probe(Duration::from_secs(1));
+        if raw >> 3 == 5 {
+            assert_eq!(result.unwrap().revision, raw & 7);
+        } else {
+            assert!(matches!(
+                result.unwrap_err().kind,
+                ErrorKind::UnexpectedIdentity(0)
+            ));
+        }
+        assert!(r.device.steps.is_empty());
+        assert!(!r.initialized && !r.is_poisoned());
+        // Drop must not reset or shut down an unidentified candidate.
+        drop(r);
+    }
+    let mut s = Script::default();
+    s.fail(&[0x7f], true, 6);
+    let mut r = St25r391x::new(s);
+    assert_eq!(
+        r.probe(Duration::from_secs(1)).unwrap_err().raw_os_error(),
+        Some(6)
+    );
+    assert!(r.device.steps.is_empty());
+    assert!(!r.is_poisoned());
+    drop(r);
+
+    let mut s = Script::default();
+    s.read(&[0x7f], &[0x28]);
+    s.steps.front_mut().unwrap().count = 1;
+    let mut r = St25r391x::new(s);
+    assert!(matches!(
+        r.probe(Duration::from_secs(1)).unwrap_err().kind,
+        ErrorKind::ShortTransfer {
+            expected: 2,
+            completed: 1
+        }
+    ));
+    assert!(r.device.steps.is_empty());
+    drop(r);
+
+    let mut r = St25r391x::new(Script::default());
+    assert!(matches!(
+        r.probe(Duration::ZERO).unwrap_err().kind,
+        ErrorKind::InvalidArgument(_)
+    ));
+    drop(r);
+}
+
+#[test]
 fn exact_bank_selector_and_combined_reads() {
     let mut s = Script::default();
     s.write(&[0xfb, 0x0c, 0x51, 0]);
