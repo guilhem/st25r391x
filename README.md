@@ -99,4 +99,17 @@ and programming hold on success/error/timeout, and verified shutdown.
 
 [PROVENANCE.md](PROVENANCE.md) records exact specification revisions, previous
 GPL C exposure and unresolved hardware/protocol qualification assumptions.
-Git dependency revision: `DELIVERED_COMMIT_SHA` (parent fills after delivery).
+Import the tested code by its immutable Git revision:
+
+```toml
+[dependencies]
+st25r391x = { git = "https://github.com/guilhem/st25r391x", rev = "a6086572f247975a9f2c98ba59c305febe8336a4" }
+i2cdev = "=0.6.2"
+```
+
+Recorded checks and remaining physical qualification are in
+[VALIDATION.md](VALIDATION.md). The small `integration/dual-reader` consumer in
+[the CR14 repository](https://github.com/guilhem/cr14/tree/codex/i2c-userspace/integration/dual-reader)
+imports both libraries together without opening a bus. This first delivery uses
+`codex/i2c-userspace`, with a parentless root commit. Future Rust pull requests
+use this new history as their base; the former GPL history retains its license.
